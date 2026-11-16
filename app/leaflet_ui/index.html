@@ -1,0 +1,569 @@
+<!DOCTYPE html>
+<html lang="pl">
+<head>
+<meta charset="UTF-8">
+<title>Inteligentny Transport Miejski — Dashboard</title>
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script src="https://unpkg.com/leaflet.heat@0.2.0/dist/leaflet-heat.js"></script>
+<style>
+* { margin:0; padding:0; box-sizing:border-box; }
+body { font-family:'Segoe UI',sans-serif; background:#0d1117; color:#e6edf3; display:flex; height:100vh; overflow:hidden; }
+#map { flex:1; height:100vh; }
+#panel { width:300px; min-width:300px; height:100vh; background:#161b22; border-left:1px solid #30363d; display:flex; flex-direction:column; overflow:hidden; }
+#panel-header { padding:12px 14px 8px; background:#0d1117; border-bottom:1px solid #30363d; }
+#panel-header h1 { font-size:13px; font-weight:600; color:#58a6ff; }
+#panel-header .sub { font-size:10px; color:#8b949e; margin-top:2px; }
+.section { padding:8px 12px; border-bottom:1px solid #21262d; }
+.section h2 { font-size:10px; font-weight:600; text-transform:uppercase; letter-spacing:.8px; color:#8b949e; margin-bottom:6px; }
+#conn-status { display:flex; align-items:center; gap:6px; font-size:11px; }
+#conn-dot { width:8px; height:8px; border-radius:50%; background:#f85149; flex-shrink:0; }
+#conn-dot.ok { background:#3fb950; animation:pulse 2s infinite; }
+@keyframes pulse { 0%,100%{opacity:1} 50%{opacity:.4} }
+#sim-clock { font-size:22px; font-weight:700; color:#e6edf3; margin-top:4px; font-variant-numeric:tabular-nums; }
+#alerts-list { max-height:140px; overflow-y:auto; display:flex; flex-direction:column; gap:3px; }
+.alert-item { font-size:10px; padding:4px 7px; border-radius:3px; border-left:3px solid #f85149; background:#2d1a1a; color:#ffa198; }
+.alert-item.warn { border-color:#d29922; background:#2a2210; color:#e3b341; }
+.alert-item.info { border-color:#3fb950; background:#0f2a18; color:#56d364; }
+#fleet-grid { display:grid; grid-template-columns:1fr 1fr; gap:5px; }
+.fleet-card { background:#0d1117; border:1px solid #30363d; border-radius:5px; padding:6px 8px; font-size:10px; }
+.fleet-card .vid { font-weight:700; color:#3b82f6; }
+.fleet-card .vline { font-size:9px; color:#8b949e; }
+.fleet-card .occ-bar { height:3px; background:#21262d; border-radius:2px; margin-top:4px; }
+.fleet-card .occ-fill { height:100%; border-radius:2px; background:#3fb950; transition:width .5s; }
+.fleet-card .delay { font-size:9px; margin-top:2px; }
+.fleet-card .delay.late { color:#f85149; }
+.fleet-card .delay.ok { color:#3fb950; }
+#stops-list { display:flex; flex-direction:column; gap:4px; max-height:200px; overflow-y:auto; }
+.stop-row { display:flex; align-items:center; gap:6px; font-size:10px; }
+.stop-id { font-weight:700; color:#58a6ff; width:22px; flex-shrink:0; }
+.stop-name { flex:1; color:#c9d1d9; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+.stop-pax { font-size:9px; color:#8b949e; white-space:nowrap; }
+.stop-bar { width:50px; height:4px; background:#21262d; border-radius:2px; flex-shrink:0; }
+.stop-bar-fill { height:100%; border-radius:2px; background:#3fb950; transition:width .4s; }
+#legend { padding:8px 12px; margin-top:auto; border-top:1px solid #21262d; }
+#legend h2 { font-size:10px; font-weight:600; text-transform:uppercase; color:#8b949e; margin-bottom:5px; }
+.leg-row { display:flex; align-items:center; gap:6px; font-size:10px; color:#8b949e; margin-bottom:3px; }
+.leg-dot { width:10px; height:10px; border-radius:2px; flex-shrink:0; }
+#offers-toast { position:fixed; bottom:16px; left:50%; transform:translateX(-50%); background:#1f2937; border:1px solid #374151; border-radius:7px; padding:8px 16px; font-size:11px; color:#f3f4f6; box-shadow:0 4px 20px rgba(0,0,0,.5); display:none; z-index:9999; max-width:380px; text-align:center; }
+.leaflet-container { background:#1a2332; }
+</style>
+</head>
+<body>
+<div id="map"></div>
+<div id="panel">
+  <div id="panel-header">
+    <h1>🚌 Inteligentny Transport Miejski</h1>
+    <div class="sub">System Wieloagentowy — Warszawa</div>
+  </div>
+  <div class="section">
+    <div id="conn-status"><div id="conn-dot"></div><span id="conn-label">Łączenie...</span></div>
+    <div id="sim-clock">--:--:--</div>
+  </div>
+  <div class="section"><h2>⚠ Alarmy</h2><div id="alerts-list"><div class="alert-item info">Oczekiwanie na dane...</div></div></div>
+  <div class="section"><h2>🚍 Flota autobusów</h2><div id="fleet-grid"></div></div>
+  <div class="section"><h2>🚏 Przystanki</h2><div id="stops-list"></div></div>
+  <div id="legend">
+    <h2>Legenda</h2>
+    <div class="leg-row"><div class="leg-dot" style="background:#3b82f6"></div> Autobus Linia 17</div>
+    <div class="leg-row"><div class="leg-dot" style="background:#f59e0b"></div> Rezerwa</div>
+    <div class="leg-row"><div class="leg-dot" style="background:#10b981;border-radius:50%"></div> Sygnalizator zielony</div>
+    <div class="leg-row"><div class="leg-dot" style="background:#6b7280;border-radius:50%"></div> Ruch uliczny</div>
+  </div>
+</div>
+<div id="offers-toast"></div>
+
+<script>
+const WS_URL = "ws://localhost:8765";
+const OSRM   = "https://router.project-osrm.org/route/v1/driving";
+
+const STOPS = {
+  S1:{ name:"Dworzec Centralny", lat:52.2297, lon:21.0122 },
+  S2:{ name:"Pl. Konstytucji",   lat:52.2214, lon:21.0145 },
+  S3:{ name:"Centrum",           lat:52.2317, lon:21.0062 },
+  S4:{ name:"Stadion",           lat:52.2397, lon:21.0455 },
+  S5:{ name:"Praga Centrum",     lat:52.2480, lon:21.0580 },
+};
+const LINE17_STOPS = ["S1","S2","S3","S4","S5"];
+
+const SIGNALS = {
+  X01:{ lat:52.2260, lon:21.0133 },
+  X02:{ lat:52.2357, lon:21.0258 },
+  X03:{ lat:52.2408, lon:21.0552 },
+};
+
+// ── MAPA ─────────────────────────────────────────────────────
+const map = L.map('map', { center:[52.235,21.020], zoom:14 });
+L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+  attribution:'© OpenStreetMap contributors', maxZoom:19
+}).addTo(map);
+
+const vehicleLayer = L.layerGroup().addTo(map);
+const trafficLayer = L.layerGroup().addTo(map);
+const stopLayer    = L.layerGroup().addTo(map);
+const signalLayer  = L.layerGroup().addTo(map);
+const routeLayer   = L.layerGroup().addTo(map);
+const heatLayer    = L.heatLayer([],{radius:28,blur:18,maxZoom:16,
+  gradient:{0.4:'#1e40af',0.65:'#f59e0b',1:'#ef4444'}}).addTo(map);
+
+L.control.layers(null,{
+  "Trasa L17":routeLayer,"Pojazdy":vehicleLayer,"Ruch drogowy":trafficLayer,
+  "Przystanki":stopLayer,"Sygnalizatory":signalLayer,"Heatmapa":heatLayer
+},{collapsed:true,position:'topright'}).addTo(map);
+
+// ── OSRM helper ───────────────────────────────────────────────
+async function osrmRoute(waypoints) {
+  // waypoints: [[lon,lat], ...]
+  const coords = waypoints.map(w=>`${w[0]},${w[1]}`).join(';');
+  try {
+    const r    = await fetch(`${OSRM}/${coords}?overview=full&geometries=geojson`);
+    const json = await r.json();
+    if (json.code !== 'Ok') throw new Error(json.code);
+    // zwróć jako [[lat,lon], ...]
+    return json.routes[0].geometry.coordinates.map(c=>[c[1],c[0]]);
+  } catch(e) {
+    console.warn('OSRM fallback:', e);
+    // fallback: prosta linia
+    return waypoints.map(w=>[w[1],w[0]]);
+  }
+}
+
+// ── Geometria trasy L17 (pełna, po ulicach) ──────────────────
+// geom[i] = [lat, lon]
+// Długości skumulowane (metry) do przeliczania pozycji GPS → indeks
+let busRouteGeom   = null;   // [[lat,lon],...]
+let busRouteCumLen = null;   // [0, d1, d1+d2, ...]
+let busRouteTotalM = 0;
+
+function latLngDistM(a, b) {
+  // przybliżone metry między [lat,lon] punktami
+  const R = 6371000;
+  const dlat = (b[0]-a[0]) * Math.PI/180;
+  const dlon = (b[1]-a[1]) * Math.PI/180;
+  const la = (a[0]+b[0])/2 * Math.PI/180;
+  return Math.sqrt((dlat*R)**2 + (dlon*R*Math.cos(la))**2);
+}
+
+function buildCumLen(geom) {
+  const cum = [0];
+  for (let i=1; i<geom.length; i++) {
+    cum.push(cum[i-1] + latLngDistM(geom[i-1], geom[i]));
+  }
+  return cum;
+}
+
+// Przelicz GPS (lat,lon) → odległość wzdłuż trasy (metry)
+function gpsToRouteM(lat, lon) {
+  if (!busRouteGeom) return 0;
+  const pt = [lat, lon];
+  let bestD = Infinity, bestM = 0;
+  for (let i=0; i<busRouteGeom.length-1; i++) {
+    const a = busRouteGeom[i], b = busRouteGeom[i+1];
+    const {t, proj} = projectOnSeg(pt, a, b);
+    const d = latLngDistM(pt, proj);
+    if (d < bestD) {
+      bestD = d;
+      bestM = busRouteCumLen[i] + t*(busRouteCumLen[i+1]-busRouteCumLen[i]);
+    }
+  }
+  return bestM;
+}
+
+function projectOnSeg(p, a, b) {
+  const ax=a[1],ay=a[0],bx=b[1],by=b[0],px=p[1],py=p[0];
+  const dx=bx-ax,dy=by-ay,len2=dx*dx+dy*dy;
+  if(len2===0) return {t:0, proj:a};
+  const t = Math.max(0,Math.min(1,((px-ax)*dx+(py-ay)*dy)/len2));
+  return {t, proj:[ay+t*dy, ax+t*dx]};
+}
+
+// Interpolacja punktu na trasie przy danej odległości (metry)
+function routeMtoLatLng(m) {
+  if (!busRouteGeom) return [52.235, 21.020];
+  const clamp = Math.max(0, Math.min(m, busRouteTotalM));
+  // binary search w busRouteCumLen
+  let lo=0, hi=busRouteCumLen.length-2;
+  while (lo<hi) {
+    const mid=(lo+hi)>>1;
+    if (busRouteCumLen[mid+1]<clamp) lo=mid+1; else hi=mid;
+  }
+  const i=lo;
+  const segLen = busRouteCumLen[i+1]-busRouteCumLen[i];
+  const t = segLen>0 ? (clamp-busRouteCumLen[i])/segLen : 0;
+  const a=busRouteGeom[i], b=busRouteGeom[i+1]||a;
+  return [a[0]+(b[0]-a[0])*t, a[1]+(b[1]-a[1])*t];
+}
+
+async function fetchBusRoute() {
+  const wps = LINE17_STOPS.map(s=>[STOPS[s].lon, STOPS[s].lat]);
+  busRouteGeom   = await osrmRoute(wps);
+  busRouteCumLen = buildCumLen(busRouteGeom);
+  busRouteTotalM = busRouteCumLen[busRouteCumLen.length-1];
+
+  L.polyline(busRouteGeom, {color:'#3b82f6',weight:4,opacity:0.45})
+    .addTo(routeLayer).bindTooltip('Linia 17',{sticky:true});
+
+  initTraffic();
+}
+
+// ── PRZYSTANKI ───────────────────────────────────────────────
+const stopMarkers = {};
+const stopWaiting = {};
+
+function makeStopIcon(sid, count) {
+  const pct=Math.min(count/50,1);
+  const col=pct<0.4?'#10b981':pct<0.75?'#f59e0b':'#ef4444';
+  const badge=count>0?`<div style="position:absolute;top:-16px;left:50%;transform:translateX(-50%);
+    background:${col};color:#fff;font-size:9px;font-weight:700;padding:1px 5px;
+    border-radius:8px;white-space:nowrap;">${count} os.</div>`:'';
+  let dots='';
+  for(let i=0;i<Math.min(count,15);i++){
+    dots+=`<div style="position:absolute;left:${2+(i%5)*8}px;top:${18+Math.floor(i/5)*8}px;
+      width:5px;height:8px;border-radius:3px 3px 1px 1px;background:${col};opacity:.85;"></div>`;
+  }
+  const h=count>10?44:count>5?36:28;
+  return L.divIcon({className:'',iconSize:[44,h],iconAnchor:[22,0],
+    html:`<div style="position:relative;width:44px;height:${h}px;">${badge}
+      <div style="background:#1e3a5f;border:2px solid #3b82f6;border-radius:4px;
+        padding:1px 3px;font-size:9px;font-weight:700;color:#93c5fd;text-align:center;">${sid}</div>
+      ${dots}</div>`});
+}
+
+for(const [sid,s] of Object.entries(STOPS)){
+  stopWaiting[sid]=0;
+  stopMarkers[sid]=L.marker([s.lat,s.lon],{icon:makeStopIcon(sid,0),zIndexOffset:100})
+    .bindPopup(`<b>${sid} — ${s.name}</b><br>Czekających: <span id="pp-${sid}">0</span>`)
+    .addTo(stopLayer);
+}
+
+function updateStop(sid,count){
+  stopWaiting[sid]=count;
+  if(stopMarkers[sid]){
+    stopMarkers[sid].setIcon(makeStopIcon(sid,count));
+    const el=document.getElementById(`pp-${sid}`);
+    if(el) el.textContent=count;
+  }
+  updateHeatmap(); updateStopsList();
+}
+
+function updateHeatmap(){
+  heatLayer.setLatLngs(Object.entries(STOPS).flatMap(([sid,s])=>{
+    const w=stopWaiting[sid]||0;
+    return w>0?[[s.lat,s.lon,Math.min(w/40,1)]]:[];
+  }));
+}
+
+// ── SYGNALIZATORY ────────────────────────────────────────────
+const signalMarkers={};
+function makeSignalIcon(green){
+  const col=green?'#10b981':'#ef4444',ring=green?'#064e3b':'#450a0a';
+  return L.divIcon({className:'',iconSize:[20,20],iconAnchor:[10,10],
+    html:`<div style="width:20px;height:20px;border-radius:50%;background:${col};
+      border:3px solid ${ring};box-shadow:0 0 8px ${col};"></div>`});
+}
+for(const [sid,s] of Object.entries(SIGNALS)){
+  signalMarkers[sid]=L.marker([s.lat,s.lon],{icon:makeSignalIcon(true),zIndexOffset:200})
+    .bindTooltip(sid,{permanent:true,direction:'right'}).addTo(signalLayer);
+}
+function setSignal(sid,green){
+  if(signalMarkers[sid]) signalMarkers[sid].setIcon(makeSignalIcon(green));
+}
+
+// ── POJAZDY — jazda PO TRASIE ────────────────────────────────
+// Autobus sam jedzie po geometrii trasy z własną prędkością.
+// MQTT/GPS tylko koryguje jego pozycję (routeM) raz na ~1-2s.
+// Między korekcjami porusza się z ostatnio wyliczoną prędkością.
+
+const vehicles = {};
+const BUS_SPEED_MS = 25/3.6; // ~25 km/h w m/s — prędkość domyślna na trasie
+
+function makeBusIcon(vid,occ,delay){
+  const pct=Math.round((occ||0)*100);
+  const barCol=pct<60?'#10b981':pct<85?'#f59e0b':'#ef4444';
+  const dTxt=delay>0?`+${delay}s`:'';
+  const dCol=delay>60?'#ef4444':delay>0?'#f59e0b':'#10b981';
+  return L.divIcon({className:'',iconSize:[36,42],iconAnchor:[18,21],
+    html:`<div style="display:flex;flex-direction:column;align-items:center;gap:1px;">
+      <div style="font-size:9px;font-weight:700;color:#fff;background:#2563eb;
+        padding:0 4px;border-radius:3px;line-height:13px;">${vid}</div>
+      <div style="width:26px;height:16px;background:#3b82f6;
+        border-radius:4px 4px 2px 2px;border:2px solid rgba(255,255,255,.8);"></div>
+      <div style="width:28px;height:3px;background:#374151;border-radius:2px;">
+        <div style="width:${pct}%;height:100%;background:${barCol};border-radius:2px;"></div>
+      </div>
+      ${dTxt?`<div style="font-size:8px;color:${dCol};font-weight:700;">${dTxt}</div>`:''}</div>`});
+}
+
+let lastFrameTime = performance.now();
+
+function animationLoop(now) {
+  const dtMs = Math.min(now - lastFrameTime, 100); // max 100ms delta (tab nieaktywna)
+  lastFrameTime = now;
+  const dtS = dtMs / 1000;
+
+  for (const v of Object.values(vehicles)) {
+    if (!busRouteGeom) continue;
+
+    // Przesuń autobus wzdłuż trasy zgodnie z prędkością
+    v.routeM += v.speedMS * dtS;
+
+    // Koryguj w kierunku celu GPS (łagodnie, nie teleport)
+    // — zbliżaj routeM w stronę targetM z max 20% na sekundę
+    const diff = v.targetM - v.routeM;
+    v.routeM += diff * Math.min(0.2 * dtS, 0.05);
+
+    // Zapętl trasę
+    if(v.routeM > busRouteTotalM) v.routeM = 0;
+    if(v.routeM < 0) v.routeM = 0;
+
+    const pos = routeMtoLatLng(v.routeM);
+    v.marker.setLatLng(pos);
+  }
+
+  requestAnimationFrame(animationLoop);
+}
+requestAnimationFrame(animationLoop);
+
+function upsertVehicle(vid, lat, lon, occ, delay) {
+  const targetM = gpsToRouteM(lat, lon);
+
+  if (!vehicles[vid]) {
+    const startPos = busRouteGeom ? routeMtoLatLng(targetM) : [lat,lon];
+    vehicles[vid] = {
+      marker: L.marker(startPos, {icon:makeBusIcon(vid,occ||0,delay||0),zIndexOffset:500})
+               .addTo(vehicleLayer).bindPopup(`<b>${vid}</b> — Linia 17`),
+      routeM:  targetM,
+      targetM: targetM,
+      speedMS: BUS_SPEED_MS,
+      occ: occ||0, delay: delay||0,
+      prevTargetM: targetM,
+      prevTargetT: performance.now(),
+    };
+  } else {
+    const v = vehicles[vid];
+    // Wylicz prędkość z delta GPS między kolejnymi updateami
+    const now = performance.now();
+    const dtS = (now - v.prevTargetT) / 1000;
+    if (dtS > 0.1) {
+      let dM = targetM - v.prevTargetM;
+      // Uwzględnij zapętlenie trasy
+      if(dM < -busRouteTotalM*0.5) dM += busRouteTotalM;
+      if(dM >  busRouteTotalM*0.5) dM -= busRouteTotalM;
+      const measuredSpeed = dM / dtS;
+      // Przyjmij nową prędkość tylko jeśli sensowna (0-20 m/s)
+      if(measuredSpeed > 0 && measuredSpeed < 20) {
+        v.speedMS = v.speedMS * 0.7 + measuredSpeed * 0.3; // exponential smoothing
+      }
+    }
+    v.prevTargetM = targetM;
+    v.prevTargetT = performance.now();
+    v.targetM = targetM;
+    if(occ !== undefined) v.occ = occ;
+    if(delay !== undefined) v.delay = delay;
+    v.marker.setIcon(makeBusIcon(vid, v.occ, v.delay));
+  }
+  updateFleetPanel();
+}
+
+// ── RUCH ULICZNY — auta po geometrii OSRM ───────────────────
+// Trasy dla aut — pobrane z OSRM, auta krążą w pętli
+const TRAFFIC_WPS = [
+  [[21.0000,52.2297],[21.0062,52.2317],[21.0258,52.2357],[21.0455,52.2397]],
+  [[21.0455,52.2397],[21.0258,52.2357],[21.0062,52.2317],[21.0000,52.2297]],
+  [[21.0062,52.2480],[21.0062,52.2317],[21.0062,52.2200]],
+  [[21.0062,52.2200],[21.0062,52.2317],[21.0062,52.2480]],
+  [[20.9800,52.2340],[21.0000,52.2317],[21.0062,52.2317]],
+  [[21.0062,52.2317],[21.0258,52.2357],[21.0455,52.2397],[21.0580,52.2480]],
+  [[21.0455,52.2397],[21.0552,52.2408],[21.0650,52.2420],[21.0820,52.2350]],
+  [[21.0122,52.2297],[21.0133,52.2260],[21.0145,52.2214]],
+  [[21.0145,52.2214],[21.0133,52.2260],[21.0122,52.2297]],
+];
+
+const trafficGeoms = [];   // [[lat,lon],...] dla każdej trasy
+const trafficCumLens = [];
+const trafficCars  = [];
+const MAX_CARS     = 35;
+
+async function initTraffic() {
+  const results = await Promise.all(TRAFFIC_WPS.map(wps => osrmRoute(wps)));
+  results.forEach(geom => {
+    if(geom && geom.length > 1) {
+      trafficGeoms.push(geom);
+      trafficCumLens.push(buildCumLen(geom));
+    }
+  });
+  // Spawn pierwszych aut
+  for(let i=0; i<MAX_CARS; i++) spawnCar();
+}
+
+function spawnCar() {
+  if(trafficGeoms.length === 0) return;
+  const idx  = Math.floor(Math.random() * trafficGeoms.length);
+  const geom = trafficGeoms[idx];
+  const cumL = trafficCumLens[idx];
+  const totalM = cumL[cumL.length-1];
+  const car = {
+    geom, cumL, totalM,
+    m:      Math.random() * totalM,           // pozycja startowa losowa
+    speedM: (8 + Math.random()*6),            // 8-14 m/s ≈ 29-50 km/h
+    marker: null,
+  };
+  const pos = carMtoLatLng(car, car.m);
+  car.marker = L.circleMarker(pos,{
+    radius:2.5, color:'#4b5563', fillColor:'#9ca3af', fillOpacity:.9, weight:1
+  }).addTo(trafficLayer);
+  trafficCars.push(car);
+}
+
+function carMtoLatLng(car, m) {
+  const clamp = Math.max(0, Math.min(m, car.totalM));
+  let lo=0, hi=car.cumL.length-2;
+  while(lo<hi){ const mid=(lo+hi)>>1; if(car.cumL[mid+1]<clamp) lo=mid+1; else hi=mid; }
+  const segLen=car.cumL[lo+1]-car.cumL[lo];
+  const t=segLen>0?(clamp-car.cumL[lo])/segLen:0;
+  const a=car.geom[lo], b=car.geom[lo+1]||a;
+  return [a[0]+(b[0]-a[0])*t, a[1]+(b[1]-a[1])*t];
+}
+
+// Tick aut — osobny setInterval (nie RAF żeby nie obciążać pętli renderowania)
+setInterval(() => {
+  const dtS = 0.08; // 80ms tick
+  for(let i=trafficCars.length-1; i>=0; i--) {
+    const car = trafficCars[i];
+    car.m += car.speedM * dtS;
+    if(car.m >= car.totalM) {
+      // Zapętl — wróć na początek tej samej trasy
+      car.m -= car.totalM;
+    }
+    car.marker.setLatLng(carMtoLatLng(car, car.m));
+  }
+  // Utrzymuj liczbę aut — spawn jeśli za mało
+  while(trafficCars.length < MAX_CARS) spawnCar();
+}, 80);
+
+// ── PANEL ────────────────────────────────────────────────────
+const alertItems=[];
+function addAlert(msg,type='error'){
+  const list=document.getElementById('alerts-list');
+  if(alertItems.length===0) list.innerHTML='';
+  const div=document.createElement('div');
+  div.className=`alert-item ${type==='warn'?'warn':type==='info'?'info':''}`;
+  const t=new Date().toLocaleTimeString('pl-PL',{hour:'2-digit',minute:'2-digit',second:'2-digit'});
+  div.textContent=`[${t}] ${msg}`;
+  list.prepend(div); alertItems.unshift(div);
+  if(alertItems.length>8) alertItems.pop().remove();
+}
+
+function updateFleetPanel(){
+  const grid=document.getElementById('fleet-grid');
+  grid.innerHTML='';
+  for(const [vid,v] of Object.entries(vehicles)){
+    const pct=Math.round((v.occ||0)*100);
+    const barCol=pct<60?'#3fb950':pct<85?'#d29922':'#f85149';
+    const delay=v.delay||0;
+    grid.innerHTML+=`<div class="fleet-card">
+      <div class="vid">${vid}</div><div class="vline">Linia 17</div>
+      <div class="occ-bar"><div class="occ-fill" style="width:${pct}%;background:${barCol}"></div></div>
+      <div class="delay ${delay>30?'late':'ok'}">${pct}% ${delay>0?`⚠ +${delay}s`:delay<0?`▲ ${delay}s`:'✓ pkt.'}</div>
+    </div>`;
+  }
+}
+
+function updateStopsList(){
+  const list=document.getElementById('stops-list');
+  list.innerHTML='';
+  for(const [sid,s] of Object.entries(STOPS)){
+    const count=stopWaiting[sid]||0;
+    const pct=Math.min(count/40*100,100);
+    const col=pct<40?'#3fb950':pct<75?'#d29922':'#f85149';
+    list.innerHTML+=`<div class="stop-row">
+      <div class="stop-id">${sid}</div><div class="stop-name">${s.name}</div>
+      <div class="stop-pax">${count} os.</div>
+      <div class="stop-bar"><div class="stop-bar-fill" style="width:${pct}%;background:${col}"></div></div>
+    </div>`;
+  }
+}
+updateStopsList();
+
+// ── WEBSOCKET ────────────────────────────────────────────────
+function connect(){
+  const ws=new WebSocket(WS_URL);
+  ws.onopen=()=>{
+    document.getElementById('conn-dot').className='ok';
+    document.getElementById('conn-label').textContent='Połączono z MQTT';
+    addAlert('Połączono z systemem MAS','info');
+  };
+  ws.onclose=()=>{
+    document.getElementById('conn-dot').className='';
+    document.getElementById('conn-label').textContent='Rozłączono — ponawiam...';
+    setTimeout(connect,3000);
+  };
+  ws.onerror=()=>{};
+  ws.onmessage=evt=>{
+    let env; try{env=JSON.parse(evt.data);}catch{return;}
+    handleMqtt(env.topic||'',env.payload||{});
+  };
+}
+
+function handleMqtt(topic,payload){
+  const p=topic.split('/');
+  if(/^transit\/vehicle\/.+\/gps$/.test(topic)){
+    const vid=p[2], lat=parseFloat(payload.lat||0), lon=parseFloat(payload.lon||0);
+    const line=String(payload.line||'');
+    if(!lat&&!lon) return;
+    if(line!=='17'&&!vid.startsWith('R')) return;
+    upsertVehicle(vid, lat, lon, vehicles[vid]?.occ, vehicles[vid]?.delay);
+  }
+  else if(/^transit\/vehicle\/.+\/occupancy$/.test(topic)){
+    const vid=p[2],pax=parseInt(payload.passengers||0),cap=parseInt(payload.capacity||90);
+    if(vehicles[vid]){
+      vehicles[vid].occ=cap>0?pax/cap:0;
+      vehicles[vid].marker.setIcon(makeBusIcon(vid,vehicles[vid].occ,vehicles[vid].delay));
+      updateFleetPanel();
+    }
+  }
+  else if(/^transit\/vehicle\/.+\/delay$/.test(topic)){
+    const vid=p[2],delay=parseInt(payload.delay_s||0);
+    if(vehicles[vid]){
+      vehicles[vid].delay=delay;
+      vehicles[vid].marker.setIcon(makeBusIcon(vid,vehicles[vid].occ,delay));
+      updateFleetPanel();
+      if(delay>120) addAlert(`${vid} opóźnienie ${delay}s`,'warn');
+    }
+  }
+  else if(/^transit\/stop\/.+\/waiting$/.test(topic)){
+    const sid=p[2],count=parseInt(payload.count||0);
+    if(STOPS[sid]){updateStop(sid,count);if(count>35)addAlert(`Przepełnienie ${sid}: ${count} os.`,'warn');}
+  }
+  else if(/^transit\/signal\/.+\/phase$/.test(topic)){
+    setSignal(p[2],payload.action==='extend_green');
+  }
+  else if(topic==='sim/clock'){
+    const t=payload.time||payload.sim_time||'';
+    if(t) document.getElementById('sim-clock').textContent=t;
+  }
+  else if(topic.startsWith('supervisor/')||topic.includes('alert')){
+    addAlert(payload.message||payload.msg||JSON.stringify(payload),
+      payload.level==='info'?'info':payload.level==='warn'?'warn':'error');
+  }
+  else if(topic.startsWith('partners/')){
+    const name=payload.partner_name||payload.name||'';
+    if(name){
+      const toast=document.getElementById('offers-toast');
+      toast.textContent=`🏪 ${name} — ${payload.discount||''} przy ${payload.stop||''}`;
+      toast.style.display='block';
+      setTimeout(()=>{toast.style.display='none';},5000);
+    }
+  }
+  else if(topic.startsWith('depot/')||topic.includes('dispatch')){
+    const vid=payload.vehicle_id||payload.vid||'';
+    if(vid) addAlert(`Rezerwa ${vid} wysłana na trasę`,'info');
+  }
+}
+
+fetchBusRoute();
+connect();
+</script>
+</body>
+</html>

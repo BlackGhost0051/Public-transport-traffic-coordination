@@ -1,0 +1,38 @@
+{
+  "lines": {
+    "17": {"type":"bus","capacity":90,"stops":["S1","S2","S3","S4","S5"],"headway_min":{"06-09":6,"09-15":10,"15-19":6,"19-23":12}},
+    "4":  {"type":"tram","capacity":200,"stops":["S6","S3","S4","S7","S8"],"headway_min":{"06-09":8,"09-15":12,"15-19":8,"19-23":15}}
+  },
+  "segments": {
+    "S1-S2":{"length_m":800,"avg_speed_kmh":25},
+    "S2-S3":{"length_m":600,"avg_speed_kmh":22,"signal":"X01"},
+    "S3-S4":{"length_m":650,"avg_speed_kmh":22,"signal":"X02"},
+    "S4-S5":{"length_m":700,"avg_speed_kmh":25},
+    "S6-S3":{"length_m":900,"avg_speed_kmh":28},
+    "S4-S7":{"length_m":750,"avg_speed_kmh":28,"signal":"X03"},
+    "S7-S8":{"length_m":500,"avg_speed_kmh":20}
+  },
+  "stops": {
+    "S1":{"name":"Dworzec Centralny","lat":52.2297,"lon":21.0122,"lines":["17"]},
+    "S2":{"name":"Pl. Konstytucji","lat":52.2214,"lon":21.0145,"lines":["17"]},
+    "S3":{"name":"Centrum","lat":52.2317,"lon":21.0062,"lines":["17","4"]},
+    "S4":{"name":"Stadion","lat":52.2397,"lon":21.0455,"lines":["17","4"]},
+    "S5":{"name":"Praga Centrum","lat":52.2480,"lon":21.0580,"lines":["17"]},
+    "S6":{"name":"Wola","lat":52.2340,"lon":20.9800,"lines":["4"]},
+    "S7":{"name":"Saska Kepa","lat":52.2420,"lon":21.0650,"lines":["4"]},
+    "S8":{"name":"Goclaw","lat":52.2350,"lon":21.0820,"lines":["4"]}
+  },
+  "signals": {
+    "X01":{"lat":52.2260,"lon":21.0133,"approaches":["N","S","E","W"]},
+    "X02":{"lat":52.2357,"lon":21.0258,"approaches":["N","S","E","W"]},
+    "X03":{"lat":52.2408,"lon":21.0552,"approaches":["N","S","E","W"]}
+  },
+  "partners": {
+    "kawiarnia_1":{"stop":"S4","walk_min":2,"name":"Kawiarnia Centralna"},
+    "restauracja_1":{"stop":"S3","walk_min":3,"name":"Restauracja Stare Miasto"}
+  },
+  "events_near": {
+    "stadion":{"S4":0.5,"S3":0.3,"S5":0.2}
+  },
+  "bounds": {"lat_min":52.21,"lat_max":52.26,"lon_min":20.97,"lon_max":21.09}
+}

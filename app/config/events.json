@@ -1,0 +1,16 @@
+{
+  "events": [
+    {
+      "id": "mecz_001",
+      "place": "stadion",
+      "type": "match",
+      "capacity": 20000,
+      "fill_ratio": 0.9,
+      "start": "2026-11-03T15:00:00",
+      "planned_end": "2026-11-03T18:00:00",
+      "weather_scenario": [
+        {"sim_time": "2026-11-03T17:30:00", "event": "rain_start", "precip_mm_h": 2.5, "temp_c": 7.0}
+      ]
+    }
+  ]
+}
