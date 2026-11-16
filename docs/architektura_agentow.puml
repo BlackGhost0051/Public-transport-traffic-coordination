@@ -1,0 +1,242 @@
+@startuml architektura_agentow
+title Architektura agentów – inteligentny system transportu miejskiego
+
+top to bottom direction
+skinparam defaultFontName Arial
+skinparam defaultFontSize 13
+skinparam shadowing false
+skinparam roundCorner 8
+skinparam ArrowColor #5F5E5A
+skinparam ArrowFontColor #444441
+skinparam ArrowFontSize 11
+skinparam packageStyle rectangle
+skinparam packageBorderColor #B4B2A9
+skinparam packageFontColor #444441
+
+skinparam node {
+  BackgroundColor<<dane>> #E1F5EE
+  BorderColor<<dane>> #0F6E56
+  BackgroundColor<<decyzje>> #EEEDFE
+  BorderColor<<decyzje>> #534AB7
+  BackgroundColor<<kontrola>> #FAEEDA
+  BorderColor<<kontrola>> #854F0B
+}
+skinparam rectangle {
+  BackgroundColor #F1EFE8
+  BorderColor #888780
+}
+skinparam cloud {
+  BackgroundColor #F1EFE8
+  BorderColor #888780
+}
+skinparam database {
+  BackgroundColor #FAEEDA
+  BorderColor #854F0B
+}
+hide stereotype
+
+' ===================== ŹRÓDŁA DANYCH =====================
+package "Źródła danych" {
+  rectangle "Czujniki w pojeździe\n(GPS, liczniki, temp., CO₂)" as CZ
+  rectangle "Licznik ludzi\nna przystanku" as LIC
+  cloud "API pogody\n(Open-Meteo)" as API
+  rectangle "Kalendarz\nwydarzeń" as KAL
+  rectangle "Lokale\npartnerskie" as LOK
+}
+
+' ===================== AGENCI DANYCH =====================
+package "Agenci danych" {
+  node POJ <<dane>> [
+    **1. Agent pojazdu**
+    ----
+    //Wejście://
+    • GPS, liczniki pasażerów
+    • temperatura, CO₂
+    • rozkład jazdy
+    • postój, zgoda na priorytet
+    ----
+    //Wyjście://
+    • pozycja, zapełnienie
+    • ETA, opóźnienie
+    • prośba o priorytet
+    • sterowanie klimatyzacją
+  ]
+  node PRZ <<dane>> [
+    **2. Agent przystanku**
+    ----
+    //Wejście://
+    • licznik ludzi
+    • ETA pojazdów
+    • oferty
+    ----
+    //Wyjście://
+    • liczba czekających
+    • czas oczekiwania na linię
+    • treść tablicy
+  ]
+  node POG <<dane>> [
+    **3. Agent pogody**
+    ----
+    //Wejście://
+    • dane z API pogody
+    ----
+    //Wyjście://
+    • kategoria pogody
+  ]
+  node WYD <<dane>> [
+    **4. Agent wydarzeń**
+    ----
+    //Wejście://
+    • kalendarz wydarzeń
+    • liczba czekających
+    ----
+    //Wyjście://
+    • opis wydarzenia (miejsce, typ,
+      liczba uczestników)
+    • czas zakończenia
+  ]
+}
+
+' ===================== AGENCI DECYZYJNI =====================
+package "Agenci decyzyjni" {
+  node PRO <<decyzje>> [
+    **5. Agent prognozy popytu**
+    ----
+    //Wejście://
+    • liczba czekających
+    • kategoria pogody
+    • opis wydarzenia
+    • historia z bazy danych
+    ----
+    //Wyjście://
+    • prognoza na linię (15/30/60 min)
+  ]
+  node KOO <<decyzje>> [
+    **6. Koordynator linii**
+    ----
+    //Wejście://
+    • pozycja, zapełnienie, ETA
+    • opóźnienie pojazdów
+    • prognoza na linię
+    • przydział pojazdu, alarmy
+    ----
+    //Wyjście://
+    • postój
+    • zgoda na priorytet
+    • zgłoszenie / zwolnienie rezerwy
+  ]
+  node ZAJ <<decyzje>> [
+    **7. Agent zajezdni**
+    ----
+    //Wejście://
+    • zgłoszenia rezerw
+    • stan pojazdów rezerwowych
+    • alarmy
+    ----
+    //Wyjście://
+    • przydział pojazdu
+    • wysłanie rezerwy
+  ]
+  node SYG <<decyzje>> [
+    **8. Agent sygnalizacji**
+    ----
+    //Wejście://
+    • prośba o priorytet
+    • stan ruchu
+    ----
+    //Wyjście://
+    • zmiana faz świateł
+  ]
+  node OFE <<decyzje>> [
+    **9. Agent ofert**
+    ----
+    //Wejście://
+    • czas oczekiwania
+    • kategoria pogody
+    • oferty lokali
+    ----
+    //Wyjście://
+    • oferta na tablicę
+    • powiadomienie w aplikacji
+  ]
+}
+
+' ===================== KONTROLA =====================
+package "Kontrola" {
+  node NAD <<kontrola>> [
+    **10. Agent nadzoru**
+    ----
+    //Wejście://
+    • wszystkie tematy (transit/#)
+    • statusy LWT
+    ----
+    //Wyjście://
+    • zapis historii
+    • alarmy
+    • dane do dashboardu
+  ]
+  database "Baza danych" as BD
+  rectangle "Dashboard\ndyspozytora" as DASH
+}
+
+' ===================== URZĄDZENIA I INTERFEJSY =====================
+package "Urządzenia i interfejsy" {
+  rectangle "Klimatyzacja" as KLI
+  rectangle "Sygnalizator\nświetlny" as SWI
+  rectangle "Tablica na\nprzystanku" as TAB
+  rectangle "Aplikacja\npasażera" as APP
+}
+
+' ===================== POŁĄCZENIA =====================
+' źródła → agenci danych
+CZ --> POJ
+LIC --> PRZ
+API --> POG
+KAL --> WYD
+LOK --> OFE : oferty
+
+' agenci danych → agenci decyzyjni
+POJ --> PRZ : ETA
+PRZ --> WYD : liczba czekających
+PRZ --> PRO : liczba czekających
+POG --> PRO : kategoria pogody
+WYD --> PRO : opis wydarzenia
+POJ --> KOO : pozycja, zapełnienie,\nopóźnienie
+PRO --> KOO : prognoza na linię
+
+' decyzje i koordynacja
+POJ <-- KOO : postój,\nzgoda na priorytet
+KOO --> ZAJ : zgłoszenie /\nzwolnienie rezerwy
+KOO <-- ZAJ : przydział pojazdu
+POJ <-- ZAJ : wysłanie rezerwy
+POJ --> SYG : prośba o priorytet
+PRZ --> OFE : czas oczekiwania
+POG --> OFE : kategoria pogody
+PRZ <-- OFE : oferta
+
+' wykonanie
+POJ --> KLI
+SYG --> SWI
+PRZ --> TAB
+OFE --> APP : powiadomienie
+
+' kontrola
+ZAJ -[hidden]down-> NAD
+NAD --> BD : zapis historii
+PRO <.. BD : historia
+KOO <-- NAD : alarmy
+ZAJ <-- NAD : alarmy
+NAD --> DASH
+
+legend right
+  **Legenda**
+  |<#E1F5EE>      | agenci danych |
+  |<#EEEDFE>      | agenci decyzyjni |
+  |<#FAEEDA>      | kontrola |
+  ----
+  Wszystkie strzałki między agentami
+  przechodzą fizycznie przez
+  broker MQTT (Mosquitto).
+endlegend
+
+@enduml
